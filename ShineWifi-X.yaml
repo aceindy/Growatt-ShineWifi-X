@@ -1,0 +1,199 @@
+# growatt modbus
+substitutions:
+  node_name: shinewifix_modbus
+  friendly_node_name: "ShineWiFi-X ModBus"
+
+esphome:
+  name: ${node_name}
+  comment: ${friendly_node_name}
+  on_boot:
+    priority: 600
+    then:
+      - lambda: |-        
+          delay(60000);
+  project:
+    name: aceindy.ShineWifi-X
+    version: "1.0"
+
+esp8266:
+  board: esp07s
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_pw
+  power_save_mode: none
+
+# Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: ${node_name} FB
+    password: "fallback"
+
+captive_portal:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret api_encryption
+
+# Enable Over The Air updates
+ota:
+  - platform: esphome
+
+# Disable logging
+logger:
+  baud_rate: 0
+  level: ERROR
+
+# Enable Web server.
+web_server:
+  port: 80
+
+# Sync time with Home Assistant.
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+
+# LED pins (optional but useful)
+output:
+  - platform: gpio
+    pin: 16
+    id: led_blue
+  - platform: gpio
+    pin: 0
+    id: led_green
+  - platform: gpio
+    pin: 2
+    id: led_red
+
+# Global variable to hold number of connected TCP clients
+globals:
+  - id: tcp_clients
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+# Every 3 s: blink LED at least once, or as many times as connected TCP clients
+interval:
+  - interval: 3s
+    then:
+      - repeat:
+          count: !lambda 'return max(1, (int)id(tcp_clients));'
+          then:
+            - output.turn_on: led_blue
+            - delay: 100ms
+            - output.turn_off: led_blue
+            - delay: 100ms
+
+# Hardware UART pins for ShineWiFi-X (same as ESP-01)
+uart:
+  id: uart_bus
+  baud_rate: 115200
+  tx_pin: GPIO1
+  rx_pin: GPIO3
+  #stop_bits: 1
+  #data_bits: 8
+  #arity: NONE
+  #x_buffer_size: 256  # minimum 256 recommended; increase for long RTU responses
+
+external_components:
+  - source: github://rosenrot00/esphome_modbus_bridge
+    components: ["modbus_bridge"]
+
+  # Modbus bridge configuration
+modbus_bridge:
+  id: mb_bridge
+  uart_id: uart_bus
+  tcp_port: 502                # TCP port to listen on
+  tcp_poll_interval: 50        # ms between TCP polls
+  tcp_client_timeout: 60000    # ms of inactivity before client is disconnected
+  tcp_allowed_clients: 4       # number of simultaneous TCP clients (min 1)
+  rtu_response_timeout: 3000   # ms, internally clamped to >=10 ms
+  flow_control_pin: GPIO4     # optional: RS-485 DE/RE pin
+
+  # Example – fires whenever the number of connected TCP clients changes
+  on_tcp_clients_changed:
+    then:
+      - lambda: |-
+          id(tcp_clients) = count;
+      - logger.log:
+          format: "TCP clients connected: %d"
+          args: ['count']
+
+  # Other available events (use similarly):
+  # on_rtu_send:       # (function_code, address) – triggered for every RTU command sent
+  # on_rtu_receive:    # (function_code, address) – triggered for every valid RTU response
+  # on_rtu_timeout:    # (function_code, address) – triggered for RTU timeouts
+  # on_tcp_started:    # () – triggered when TCP server successfully starts
+  # on_tcp_stopped:    # () – triggered when TCP server stops or IP is lost
+
+  # Log transmitted RTU frames
+  on_rtu_send:
+      then:
+        - output.turn_on: led_green
+        - delay: 50ms
+        - output.turn_off: led_green
+
+  # Log received RTU frames
+  on_rtu_receive:
+      then:
+        - output.turn_on: led_red
+        - delay: 50ms
+        - output.turn_off: led_red
+
+# Debug switch for enabling verbose Modbus logging
+switch:
+  - platform: template
+    name: ${friendly_node_name} Debug mode
+    id: modbus_debug_switch
+    restore_mode: RESTORE_DEFAULT_OFF
+    turn_on_action:
+      - lambda: |-
+          id(mb_bridge).set_debug(true);
+          id(modbus_debug_switch).publish_state(true);
+    turn_off_action:
+      - lambda: |-
+          id(mb_bridge).set_debug(false);
+          id(modbus_debug_switch).publish_state(false);
+
+#binary sensors
+binary_sensor:
+  - platform: status
+    name: "${friendly_node_name} Online"
+
+# Sensors.
+sensor:
+  - platform: wifi_signal
+    name: ${friendly_node_name} WiFi Signal
+    id: ${node_name}_wifi_signal
+  - platform: template
+    name: ${friendly_node_name} Modbus Clients
+    id: ${node_name}_clients_count
+    unit_of_measurement: "clients"
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: |-
+      return id(tcp_clients);
+
+# Text Sensors.
+text_sensor:
+  - platform: version
+    name: ${friendly_node_name} ESPHome Version
+    id: ${node_name}_esphome_version    
+  - platform: wifi_info
+    ip_address:
+      name: ${friendly_node_name} IP Address
+      id: ${node_name}_ip_address
+      icon: mdi:ip-network
+
+#buttons:
+button:
+  - platform: restart
+    name: ${friendly_node_name} Restart
+    id: ${node_name}_restart
+    icon: "mdi:restart"
+  - platform: shutdown
+    name: ${friendly_node_name} Shutdown
+    id: ${node_name}_shutdown
+  - platform: safe_mode
+    name: ${friendly_node_name} Restart (Safe Mode)
+    id: ${node_name}_safe_mode
