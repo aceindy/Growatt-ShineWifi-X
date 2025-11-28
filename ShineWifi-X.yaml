@@ -72,17 +72,28 @@ globals:
     restore_value: no
     initial_value: '0'
 
-# Every 3 s: blink LED at least once, or as many times as connected TCP clients
+# Blink 100ms for every connected TCP client, or with a 1Hz frequency if no clients are connected
 interval:
   - interval: 3s
     then:
-      - repeat:
-          count: !lambda 'return max(1, (int)id(tcp_clients));'
+      - if:
+          condition:
+            lambda: 'return id(tcp_clients) == 0;'
           then:
+            # Heartbeat: 1s on / 1s off when no clients
             - output.turn_on: led_blue
-            - delay: 100ms
+            - delay: 1s
             - output.turn_off: led_blue
-            - delay: 100ms
+            - delay: 1s
+          else:
+            # Blink once per connected client (minimum already 1 because tcp_clients>0)
+            - repeat:
+                count: !lambda 'return id(tcp_clients);'
+                then:
+                  - output.turn_on: led_blue
+                  - delay: 100ms
+                  - output.turn_off: led_blue
+                  - delay: 100ms
 
 # Hardware UART pins for ShineWiFi-X (same as ESP-01)
 uart:
