@@ -115,11 +115,14 @@ modbus_bridge:
   id: mb_bridge
   uart_id: uart_bus
   tcp_port: 502                # TCP port to listen on
-  tcp_poll_interval: 50        # ms between TCP polls
+  rtu_response_timeout: 3000   # ms, internally clamped to >=10 ms
   tcp_client_timeout: 60000    # ms of inactivity before client is disconnected
   tcp_allowed_clients: 4       # number of simultaneous TCP clients (min 1)
-  rtu_response_timeout: 3000   # ms, internally clamped to >=10 ms
-  flow_control_pin: GPIO4     # optional: RS-485 DE/RE pin
+  tcp_poll_interval: 50        # ms between TCP polls
+  de_pin: GPIO4                # Optional: RS-485 Driver Enable (DE)
+  # re_pin: GPIO19               # Optional: RS-485 Receiver Enable (/RE) - de_pin and re_pin can be the same GPIO
+  # crc_bytes_swapped: false     # allows to swap CRC byte order LO/HI -> HI/LO
+  # enabled: true                # allows to enable or disable during runtime
 
   # Example – fires whenever the number of connected TCP clients changes
   on_tcp_clients_changed:
